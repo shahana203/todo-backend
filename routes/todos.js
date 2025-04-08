@@ -1,27 +1,69 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const User = require('../models/User');
-
 const router = express.Router();
+const Todo = require('../models/Todo'); 
+const authenticateToken = require('../middleware/authMiddleware');
 
-router.post('/register', async (req, res) => {
-  try {
-    const user = await User.create(req.body);
-    res.status(201).json(user);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
+
+router.post('/', authenticateToken, async (req, res) => {
+    const { title } = req.body; 
+
+        const newTodo = new Todo({
+            title,
+            user: req.user.id 
+        });
+        try{
+        const savedTodo = await newTodo.save();
+        res.status(201).json(savedTodo);
+    } catch (error) {
+        res.status(400).json({  error:'Error creating todo' });
+    }
 });
 
-router.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  const user = await User.findOne({ username });
-  if (!user || !(await bcrypt.compare(password, user.password))) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-  const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET);
-  res.json({ token });
+router.get('/', authenticateToken, async (req, res) => {
+    try {
+        const taskList = await Todo.find({ user: req.user.id });
+        res.json(taskList);
+    } catch (error) {
+        res.status(500).json({  error:'Error Fetching Todos' });
+    }
+});
+
+router.put("/:id", authenticateToken, async (req, res) => {
+    try {
+        const updatedTodo = await Todo.findOneAndUpdate(
+            { _id: req.params.id, user: req.user.id }, 
+            
+            req.body,
+            { new: true }
+        );
+
+        if (!updatedTodo) {
+            return res.status(404).json({ message: "Task not found" });
+        }
+
+        res.json(updatedTodo);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error updating task", error });
+    }
+});
+
+router.delete("/:id", authenticateToken, async (req, res) => {
+    try {
+        const deletedTodo = await Todo.findOneAndDelete({
+            _id: req.params.id,
+            user: req.user.id // Ensure user owns the todo
+        });
+
+        if (!deletedTodo) {
+            return res.status(404).json({ message: "Task not found" });
+        }
+
+        res.json({ message: "Task deleted successfully", deletedTodo });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error deleting task", error });
+    }
 });
 
 module.exports = router;
